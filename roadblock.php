@@ -1,14 +1,9 @@
+<html><body>
+Enter an address for a publicly resolver here:
+<form><input type="text" name="addr"><input type="submit"></form>
+<font size="-1">Private resolvers can not be assessed with this web application.</font><br><br>
 <?php
 
-header('Content-Type: text/html');
-
-#ob_end_flush();
-
-print("<html><body>
-Enter an address for a publicly resolver here:
-<form><input type=\"text\" name=\"addr\"><input type=\"submit\"></form>
-<font size=\"-1\">Private resolvers can not be assessed with this web application.</font><br><br>
-");
 if (!$_REQUEST["addr"]) {
 	$success = True;
 	goto error;
@@ -27,7 +22,8 @@ if (php_getdns_context_set_resolution_type($context, GETDNS_RESOLUTION_STUB)) {
 $txt_addr =  $_REQUEST["addr"] ? $_REQUEST["addr"] : "8.8.8.8";
 $addr = inet_pton($txt_addr);
 
-print("Results for $txt_addr<br>");
+print("Results for $txt_addr:<br><br>");
+
 $upstreamsArr = array(
 	0 => array("address_data" => $addr,
 		   "address_type" => strlen($addr) == 4 ? "IPv4" : "IPv6")
@@ -35,7 +31,7 @@ $upstreamsArr = array(
 
 $upstreams = 0;
 if (php_getdns_util_convert_array($upstreamsArr, $upstreams)) {
-	goto error_destroy_response;
+	goto error_destroy_context;
 }
 
 if (php_getdns_context_set_upstream_recursive_servers($context, $upstreams)) {
@@ -49,6 +45,7 @@ if (php_getdns_util_convert_array($extensionsArr, $extensions)) {
 	goto error_destroy_upstreams;
 }
 
+$pgrade = 0;
 $grade = 0;
 $respDict = 0;
 if (php_getdns_general_sync($context,
@@ -61,15 +58,16 @@ if (php_getdns_util_convert_dict($respDict, $respArr)) {
 }
 if ($respArr["replies_tree"][0]["header"]["ancount"] > 0) {
 	$grade += 1;
-	print("Query for alg-8-nsec3.dnssec-test.org returned answers: $grade<br>");
+	print("<font color=\"green\">Query for alg-8-nsec3.dnssec-test.org returned answers</font>: $grade<br>");
 } else {
-	print("Query for alg-8-nsec3.dnssec-test.org returned no answers: $grade<br>");
+	print("<font color=\"red\">Query for alg-8-nsec3.dnssec-test.org returned no answers</font>: $grade<br>");
 }
 if ($respArr["replies_tree"][0]["dnssec_status"] == GETDNS_DNSSEC_SECURE) {
 	$grade += 1;
-	print("Query for alg-8-nsec3.dnssec-test.org had secure answer: $grade<br>");
+	$pgrade += 1;
+	print("<font color=\"green\">Query for alg-8-nsec3.dnssec-test.org had secure answer</font>: $grade<br>");
 } else {
-	print("Query for alg-8-nsec3.dnssec-test.org did not have an secure answer: $grade<br>");
+	print("<font color=\"red\">Query for alg-8-nsec3.dnssec-test.org did not have an secure answer</font>: $grade<br>");
 }
 
 php_getdns_dict_destroy($respDict);
@@ -84,17 +82,43 @@ if (php_getdns_util_convert_dict($respDict, $respArr)) {
 }
 if ($respArr["replies_tree"][0]["header"]["ancount"] == 0) {
 	$grade += 1;
-	print("Query for realy-doesnotexist.dnssec-test.org. did not return answers: $grade<br>");
+	print("<font color=\"green\">Query for realy-doesnotexist.dnssec-test.org. did not return answers</font>: $grade<br>");
 } else {
-	print("Query for realy-doesnotexist.dnssec-test.org. did return answers: $grade<br>");
+	print("<font color=\"red\">Query for realy-doesnotexist.dnssec-test.org. did return answers</font>: $grade<br>");
 }
 if ($respArr["replies_tree"][0]["dnssec_status"] == GETDNS_DNSSEC_SECURE) {
 	$grade += 1;
-	print("Query for realy-doesnotexist.dnssec-test.org. was secure: $grade<br>");
+	$pgrade += 1;
+	print("<font color=\"green\">Query for realy-doesnotexist.dnssec-test.org. was secure</font>: $grade<br>");
 } else {
-	print("Query for realy-doesnotexist.dnssec-test.org. was not secure: $grade<br>");
+	print("<font color=\"red\">Query for realy-doesnotexist.dnssec-test.org. was not secure</font>: $grade<br>");
 }
 php_getdns_dict_destroy($respDict);
+$respDict = 0;
+php_getdns_context_set_edns_do_bit($context, True);
+if (php_getdns_general_sync($context,
+    "dnssec-failed.org", GETDNS_RRTYPE_SOA, NULL, $respDict)) {
+	goto error_destroy_upstreams;
+}
+$respArr = array();
+if (php_getdns_util_convert_dict($respDict, $respArr)) {
+	goto error_destroy_response;
+}
+if ($respArr["replies_tree"][0]["header"]["ancount"] == 0) {
+	$grade += 1;
+	print("<font color=\"green\">Query for dnssec-failed.org returned no answers</font>: $grade<br>");
+} else {
+	print("<font color=\"red\">Query for dnssec-failed.org returned answers</font>: $grade<br>");
+}
+if ($respArr["replies_tree"][0]["header"]["rcode"] == GETDNS_RCODE_SERVFAIL
+    && $respArr["replies_tree"][0]["header"]["ad"] == 0) {
+	$grade += 1;
+	$pgrade += 1;
+	print("<font color=\"green\">rcode for dnssec-failed.org was SERVFAIL</font>: $grade<br>");
+} else {
+	print("<font color=\"red\">rcode for dnssec-failed.org was not SERVFAIL</font>: $grade<br>");
+}
+
 $respDict = 0;
 if (php_getdns_general_sync($context,
     "alg-13-nsec3.dnssec-test.org", GETDNS_RRTYPE_SOA, $extensions, $respDict)) {
@@ -106,38 +130,17 @@ if (php_getdns_util_convert_dict($respDict, $respArr)) {
 }
 if ($respArr["replies_tree"][0]["header"]["ancount"] > 0) {
 	$grade += 1;
-	print("Query for alg-13-nsec3.dnssec-test.org returned answers: $grade<br>");
+	print("<font color=\"green\">Query for alg-13-nsec3.dnssec-test.org returned answers</font>: $grade<br>");
 } else {
-	print("Query for alg-13-nsec3.dnssec-test.org returned no answers: $grade<br>");
+	print("<font color=\"red\">Query for alg-13-nsec3.dnssec-test.org returned no answers</font>: $grade<br>");
 }
 if ($respArr["replies_tree"][0]["dnssec_status"] == GETDNS_DNSSEC_SECURE) {
 	$grade += 1;
-	print("Query for alg-13-nsec3.dnssec-test.org had secure answer: $grade<br>");
+	print("<font color=\"green\">Query for alg-13-nsec3.dnssec-test.org had secure answer</font>: $grade<br>");
 } else {
-	print("Query for alg-13-nsec3.dnssec-test.org did not have an secure answer: $grade<br>");
+	print("<font color=\"red\">Query for alg-13-nsec3.dnssec-test.org did not have an secure answer</font>: $grade<br>");
 }
-php_getdns_dict_destroy($respDict);
-$respDict = 0;
-if (php_getdns_general_sync($context,
-    "dnssec-failed.org", GETDNS_RRTYPE_SOA, $extensions, $respDict)) {
-	goto error_destroy_upstreams;
-}
-$respArr = array();
-if (php_getdns_util_convert_dict($respDict, $respArr)) {
-	goto error_destroy_response;
-}
-if ($respArr["replies_tree"][0]["header"]["ancount"] > 0) {
-	$grade += 1;
-	print("Query for dnssec-failed.org returned answers: $grade<br>");
-} else {
-	print("Query for dnssec-failed.org returned no answers: $grade<br>");
-}
-if ($respArr["replies_tree"][0]["dnssec_status"] == GETDNS_DNSSEC_BOGUS) {
-	$grade += 1;
-	print("Query for dnssec-failed.org had bogus answer: $grade<br>");
-} else {
-	print("Query for dnssec-failed.org did not have a bogus answer: $grade<br>");
-}
+
 
 $success = True;
 
@@ -147,6 +150,9 @@ error_destroy_upstreams:
 	php_getdns_list_destroy($upstreams);
 error_destroy_context:
 	php_getdns_context_destroy($context);
+
+
+printf("<img width=\"500\" src=\"dial$pgrade.png\">");
 error:
 ?>
 <br>
@@ -165,7 +171,14 @@ Also try:
 <tr><td>SmartViper</td><td><a href="?addr=208.76.50.50">208.76.50.50</a></td><td><a href="?addr=208.76.51.51">208.76.51.51</a></td></tr>
 <tr><td>DNSResolvers.com</td><td><a href="?addr=205.210.42.205">205.210.42.205</a></td><td><a href="?addr=64.68.200.200">64.68.200.200</a></td></tr>
 <tr><td>Verisign</td><td><a href="?addr=198.41.2.2">198.41.2.2</a></td><td><a href="?addr=198.41.1.1">198.41.1.1</a></td></tr>
-</table>
+</table><dl>
+<dt>Github:</dt><dd><a href="https://github.com/getdnsapi/IETF93HackathonPHP">https://github.com/getdnsapi/IETF93HackathonPHP</a></dd>
+<dt>Hackathon page:</dt><dd><a href="https://www.ietf.org/registration/MeetingWiki/wiki/dnsresolvercapabilities">https://www.ietf.org/registration/MeetingWiki/wiki/dnsresolvercapabilities</a></dd>
+<dt>Source:</dt><dd style="background-color: #eee; border: 1px solid black; padding: 1ex"><?php 
+
+	show_source(__FILE__);   
+
+?></dd></dl></body></html>
 <?php
 	exit($success ? 0 : -1);
 
